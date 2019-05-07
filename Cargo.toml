@@ -1,0 +1,9 @@
+[package]
+name = "rust-mh"
+version = "0.1.0"
+authors = ["Kanabenki <18357657+Kanabenki@users.noreply.github.com>"]
+edition = "2018"
+
+[dependencies]
+scan_fmt = "0.2.1"
+dot = "0.1.4"
