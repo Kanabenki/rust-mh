@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 scan_fmt = "0.2.1"
 dot = "0.1.4"
+clap = "2.33.0"
