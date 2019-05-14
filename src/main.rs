@@ -201,7 +201,7 @@ impl Solution {
 
             let (node_id_to_evac, evac_rate, start_offset) = scan_fmt!(&lines.next().unwrap(), "{} {} {}", u64, u64, u64).unwrap();
 
-            let mut task = Task{
+            let task = Task{
                 node_id: node_id_to_evac,
 
                 // It looks like "is_valid" in a task is useless
@@ -226,12 +226,39 @@ impl Solution {
         sol.comment = lines.next().unwrap();
 
         Ok(sol)
-        
+
     }
     
     fn add_task(&mut self, task: Task) {
         self.tasks.push(task);
     }
+
+
+    fn check_with_graph(&mut self, graph: Graph) {
+        
+        // TODO
+        /*
+            + Generate an array of resources (one arc = one resource)
+
+            + For each task in solution :
+                (we'll add the task to each resource of its route while checking that capacity isn't overloaded)
+
+                + Add the task to the first corresponding resource
+                + For each resource in the evacuation task (in order of evac !) :
+
+                    + Check in this resource if its capacity is respected
+                    + If not overloaded :
+                        + Add the task to the next resource with correct start_offset (depends on length of the resource)
+                    + Else
+                        sol.is_valid = false;
+                        return is_valid;
+            
+            sol.is_valid = true;
+            return is_valid;
+
+        */
+    }
+
 }
 
 
