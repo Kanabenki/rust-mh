@@ -1,13 +1,18 @@
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter};
 use std::env;
 use std::process::exit;
 use std::fs::File;
 use std::rc::Rc;
+use std::io::Write;
+use std::borrow::Cow;
 
 #[macro_use] extern crate scan_fmt;
 
 type Arcs = Vec<Rc<Arc>>;
+type NodeId = u64;
+
+struct GraphOut { nodes: Vec<NodeId>, edges: Vec<(NodeId, NodeId)> }
 
 struct Task {
     name: String,
@@ -23,15 +28,15 @@ struct Ressource {
 }
 
 struct Arc {
-    start_id: u64,
-    end_id: u64,
+    start_id: NodeId,
+    end_id: NodeId,
     length: u64,
     capacity: u64,
     due_date: u64,
 }
 
 struct Node {
-    id: u64,
+    id: NodeId,
     population: Option<u64>,
     max_rate: Option<u64>,
     incoming: Arcs,
@@ -104,25 +109,57 @@ impl Graph {
         self.routes.push(route);
     }
 
-    fn write_to_file(&self) {
+    fn render_to(&self, w: &mut impl Write) {
+        let mut edges = Vec::new();
+        let mut nodes = Vec::new();
+        for (k, n) in self.nodes.iter() {
+            nodes.push(*k);
+            for arc in &n.incoming {
+                edges.push((arc.start_id, arc.end_id));
+            }
+        }
 
+        let g = GraphOut{nodes, edges};
+        dot::render(&g, w);
     }
 }
 
+impl<'a> dot::Labeller<'a, NodeId, (NodeId, NodeId)> for GraphOut {
+    fn graph_id(&'a self) -> dot::Id<'a> { dot::Id::new("Graph").unwrap() }
+    fn node_id(&'a self, n: &NodeId) -> dot::Id<'a> {
+        dot::Id::new(format!("N{}", n)).unwrap()
+    }
+    fn node_label<'b>(&'b self, n: &NodeId) -> dot::LabelText<'b> {
+        dot::LabelText::LabelStr(n.to_string().into())
+    }
+    fn edge_label<'b>(&'b self, _: &(NodeId, NodeId)) -> dot::LabelText<'b> {
+        dot::LabelText::LabelStr("&sube;".into())
+    }
+}
+
+impl<'a> dot::GraphWalk<'a, NodeId, (NodeId, NodeId)> for GraphOut {
+    fn nodes(&'a self) -> dot::Nodes<'a,NodeId> {Cow::Borrowed(&self.nodes)}
+    fn edges(&'a self) ->  dot::Edges<'a, (NodeId, NodeId)> { Cow::Borrowed(&self.edges) }
+    fn source(&self, e: &(NodeId, NodeId)) -> NodeId { e.0 }
+    fn target(&self, e: &(NodeId, NodeId)) -> NodeId { e.1 }
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
+    if args.len() != 3 {
         eprintln!("usage: metaheuristic <filename>");
         exit(1);
     }
 
     let filename = &args[1];
+    let out_filename = &args[2];
     let file = File::open(filename).expect(&format!("Could not open {}", filename));
     let file = BufReader::new(file);
+    let out_file = File::create(out_filename).expect(&format!("Could not create {}", out_filename));
+    let mut out_file = BufWriter::new(out_file);
 
     if let Ok(graph) = Graph::parse(file) {
-        graph.write_to_file();
+        graph.render_to(&mut out_file);
     } else {
         eprintln!("Could not parse graph");
         exit(1);
