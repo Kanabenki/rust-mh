@@ -7,6 +7,8 @@ use std::rc::Rc;
 use std::io::Write;
 use std::borrow::Cow;
 
+use clap::{App, SubCommand};
+
 #[macro_use] extern crate scan_fmt;
 
 type Arcs = Vec<Rc<Arc>>;
@@ -287,23 +289,37 @@ impl<'a> dot::GraphWalk<'a, NodeId, (NodeId, NodeId)> for GraphOut {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 3 {
-        eprintln!("usage: metaheuristic <filename>");
-        exit(1);
+    let matches = App::new("rust-mh")
+        .version("1.0")
+        .author("Lucien Menassol <lucien.menassol@gmail.com> Julien Bonnasserre")
+        .about("Projet metaheuristique")
+        .subcommand(SubCommand::with_name("solution")
+                                      .about("Check the validity of a solution")
+                                      .arg_from_usage("<file> 'Solution file'"))
+        .subcommand(SubCommand::with_name("graph")
+                                      .about("Render a graph to a dot file")
+                                      .arg_from_usage("<in_file> 'In file'"))
+        .get_matches();
+
+    if let Some(matches) = matches.subcommand_matches("solution") {
+        let filename = matches.value_of("file").unwrap();
+        let file = File::open(filename).unwrap();
+        let file = BufReader::new(file);
+        let sol = Solution::parse(file).expect("Invalid solution");
     }
+    if let Some(matches) = matches.subcommand_matches("graph") {
+        let filename = matches.value_of("in_file").unwrap();
+        
+        let file = File::open(filename).expect(&format!("Could not open {}", filename));
+        let file = BufReader::new(file);
+        let out_file = File::create("out.dot").expect(&format!("Could not create {}", "out.dot"));
+        let mut out_file = BufWriter::new(out_file);
 
-    let filename = &args[1];
-    let out_filename = &args[2];
-    let file = File::open(filename).expect(&format!("Could not open {}", filename));
-    let file = BufReader::new(file);
-    let out_file = File::create(out_filename).expect(&format!("Could not create {}", out_filename));
-    let mut out_file = BufWriter::new(out_file);
-
-    if let Ok(graph) = Graph::parse(file) {
-        graph.render_to(&mut out_file);
-    } else {
-        eprintln!("Could not parse graph");
-        exit(1);
+        if let Ok(graph) = Graph::parse(file) {
+            graph.render_to(&mut out_file);
+        } else {
+            eprintln!("Could not parse graph");
+            exit(1);
+        }
     }
 }
