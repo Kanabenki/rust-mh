@@ -16,17 +16,23 @@ type NodeId = u64;
 
 struct GraphOut { nodes: Vec<NodeId>, edges: Vec<(NodeId, NodeId)> }
 
+#[derive(Copy, Clone)]
 struct Task {
     node_id: u64,
+<<<<<<< HEAD
 
     total_people: u64,
 
+=======
+>>>>>>> e8bf71a40826e8521e76a898b8ff9f2047b10a58
     evac_rate: u64,
-
     start_offset: u64,
+<<<<<<< HEAD
 
     task_length: u64,
 
+=======
+>>>>>>> e8bf71a40826e8521e76a898b8ff9f2047b10a58
     is_valid: bool,
 
     /*
@@ -46,6 +52,7 @@ struct Resource {
     arc: Rc<Arc>
 }
 
+<<<<<<< HEAD
 impl Resource {
 
     fn add_task(&mut self, task:Task) -> bool {
@@ -105,6 +112,9 @@ impl Resource {
 
 }
 
+=======
+#[derive(Debug, PartialEq)]
+>>>>>>> e8bf71a40826e8521e76a898b8ff9f2047b10a58
 struct Arc {
     start_id: NodeId,
     end_id: NodeId,
@@ -113,6 +123,7 @@ struct Arc {
     due_date: u64,
 }
 
+#[derive(Debug)]
 struct Node {
     id: NodeId,
     population: Option<u64>,
@@ -121,6 +132,7 @@ struct Node {
     outgoing: Option<Rc<Arc>>,
 }
 
+#[derive(Debug)]
 struct Graph {
     safe_id: u64,
     nodes: BTreeMap<u64, Node>,
@@ -149,7 +161,12 @@ impl Graph {
             let id = vals[0];
             let population = vals[1];
             let max_rate = vals[2];
-            routes.push(vals[4..].to_vec());
+            let mut route = Vec::new();
+            route.push((vals[0], vals[4]));
+            for i in 4..4 + vals[4..].len() - 1 {
+                route.push((vals[i], vals[i+1]));
+            }
+            routes.push(route);
             graph.add_node(Node{id, population: Some(population), max_rate: Some(max_rate), incoming: Vec::new(), outgoing: None});
         }
 
@@ -160,8 +177,20 @@ impl Graph {
         for _ in 0..arcs_nb {
             let line = lines.next().unwrap();
             let (start_id, end_id, due_date, length, capacity) = scan_fmt!(&line, "{} {} {} {} {}", u64, u64, u64, u64, u64).unwrap();
-            graph.add_arc(Rc::new(Arc{start_id, end_id, length, capacity, due_date}));
+            for route in &routes {
+                for (start_r, end_r) in route {
+                    if start_id == *start_r && end_id == *end_r {
+                        graph.add_arc(Rc::new(Arc{start_id, end_id, length, capacity, due_date}));
+                    } else if start_id == *end_r && end_id == *start_r {
+                        graph.add_arc(Rc::new(Arc{end_id, start_id, length, capacity, due_date}));
+                    }
+                }
+            }
         }
+        
+        graph.routes = routes.iter().map(|route| route.iter().map(|(start_id, _)| {
+            graph.nodes.get(start_id).expect("Missing node").outgoing.as_ref().expect(&format!("Missing outgoing for {}", start_id)).clone()
+        }).collect()).collect();
 
         Ok(graph)
     }
@@ -173,13 +202,15 @@ impl Graph {
 
     fn add_arc(&mut self, arc: Rc<Arc>) {
         match self.nodes.get_mut(&arc.start_id) {
-            Some(node_start) => {node_start.outgoing = Some(arc.clone());},
+            Some(ref mut node_start) if node_start.outgoing.is_none() => {node_start.outgoing = Some(arc.clone());},
             None =>  {self.add_node(Node{id: arc.start_id, population: None, max_rate: None, incoming: Vec::new(), outgoing: Some(arc.clone())});}
+            _ => {}
         }
 
         match self.nodes.get_mut(&arc.end_id) {
-            Some(node_end) => {node_end.incoming.push(arc)},
-            None => {self.add_node(Node{id: arc.start_id, population: None, max_rate: None, incoming: vec!(arc), outgoing: None});}
+            Some(ref mut node_end) if !node_end.incoming.contains(&arc) => {node_end.incoming.push(arc)},
+            None => {self.add_node(Node{id: arc.end_id, population: None, max_rate: None, incoming: vec!(arc), outgoing: None});}
+            _ => ()
         }
     }
     
@@ -300,7 +331,19 @@ impl Solution {
     }
 
 
+<<<<<<< HEAD
     fn check_with_graph(&mut self, graph: Graph) -> bool {
+=======
+    fn check_with_graph(&mut self, graph: &Graph) {
+        
+
+        let ressources: Vec<Ressource> = Vec::new();
+        //for route in &graph.routes {
+        //    for arc in &route {
+        //        let 
+        //    }
+        //}
+>>>>>>> e8bf71a40826e8521e76a898b8ff9f2047b10a58
         
         // TODO
         /*
@@ -454,6 +497,7 @@ fn main() {
         let mut out_file = BufWriter::new(out_file);
 
         if let Ok(graph) = Graph::parse(file) {
+            println!("{:#?}", graph);
             graph.render_to(&mut out_file);
         } else {
             eprintln!("Could not parse graph");
