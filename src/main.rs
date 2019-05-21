@@ -19,9 +19,13 @@ struct GraphOut { nodes: Vec<NodeId>, edges: Vec<(NodeId, NodeId)> }
 struct Task {
     node_id: u64,
 
+    total_people: u64,
+
     evac_rate: u64,
 
     start_offset: u64,
+
+    task_length: u64,
 
     is_valid: bool,
 
@@ -34,11 +38,71 @@ struct Task {
     // time_length: u64
 }
 
-struct Ressource {
+struct Resource {
     tasks: Vec<Task>,
     duration: u64,
     start_offset: u64,
+    capacity: u64,
     arc: Rc<Arc>
+}
+
+impl Resource {
+
+    fn add_task(&mut self, task:Task) -> bool {
+
+        let task_length : u64;
+
+        // A task lasts for total_people/evac_rate + eventually another unit of time if total people is not a multiple of evac_rate
+        task_length = task.total_people / task.evac_rate + (if task.total_people % task.evac_rate > 0 {1} else {0});
+
+        // Check for each unit of time if the capacity is not overloaded
+        for t in task.start_offset..(task.start_offset+task_length+1) {
+
+            let capacity_t: u64;
+
+            if t < task.start_offset + task_length {
+                capacity_t = task.total_people / task.evac_rate;
+            }
+            else {
+                capacity_t = task.total_people % task.evac_rate;
+            }
+
+            for atask in self.tasks {
+
+                if t >= atask.start_offset && t < atask.start_offset + atask.task_length {
+                    capacity_t += atask.evac_rate;
+                }
+                else if t == atask.start_offset + atask.task_length {
+                    if atask.total_people % atask.evac_rate > 0 {
+                        capacity_t += atask.total_people % atask.evac_rate;
+                    }
+                    else {
+                        capacity_t += atask.evac_rate;
+                    }
+                }
+
+            }
+
+
+            if capacity_t > self.capacity {
+                return false
+            }
+
+        }
+
+        
+        self.tasks.append(task);
+        return true;
+    }
+
+    fn check_capacity() -> bool {
+
+
+
+        return true;
+
+    }
+
 }
 
 struct Arc {
@@ -236,7 +300,7 @@ impl Solution {
     }
 
 
-    fn check_with_graph(&mut self, graph: Graph) {
+    fn check_with_graph(&mut self, graph: Graph) -> bool {
         
         // TODO
         /*
@@ -259,6 +323,80 @@ impl Solution {
             return is_valid;
 
         */
+
+        // Initialisation des ressources
+        let resources : Vec<Resource>;
+
+        // We can iterate directly on each route
+        // The only important data in the solution is the start_offset at the beginning of the task
+
+        for route in graph.routes {
+
+            // the task corresponding to the route we are studying
+            // For example we could check from which node the route begins
+            let task : Task;
+
+            let start_offset = task.start_offset;
+
+            // Going through the route
+            for arc in route {
+
+                let the_res : Resource;
+
+                if ()// resource corresponding to this arc doesn't already exist
+                {
+
+                    let new_res = Resource {
+
+                        tasks : Vec::new(),
+                        duration: arc.length,
+                        start_offset: start_offset,
+                        arc: arc
+                        
+                    };
+
+                    // Add the resource
+                    resources.append(new_res);
+
+                    the_res = new_res;
+
+                }
+
+                else 
+                {
+                    // the_res = resources.find(Corresponding Resource according to the arc)
+                }
+
+                the_res.add_task(task);
+
+                // If capacity is not sufficent, we stop checking the solution
+                // and we return that it is invalid
+                if (the_res.check_capacity() == FAIL){
+                    self.is_valid = false;
+                    return false; // Or a constant like SOLUTION_INVALID
+                }
+
+                // Else we continue
+
+                start_offset = the_res.start_offset + the_res.duration;
+
+            }
+
+            
+            
+
+
+            resources.append(the_res)
+
+        }
+
+
+        // If we reach this line, the solution is_valid
+        self.is_valid = true;
+        return true;
+
+
+        
     }
 
 }
