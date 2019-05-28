@@ -1,20 +1,24 @@
-use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, BufWriter};
-use std::env;
-use std::process::exit;
-use std::fs::File;
-use std::rc::Rc;
-use std::io::Write;
 use std::borrow::Cow;
+use std::collections::{BTreeMap, HashSet};
+use std::env;
+use std::fs::File;
+use std::io::Write;
+use std::io::{BufRead, BufReader, BufWriter};
+use std::process::exit;
+use std::rc::Rc;
 
 use clap::{App, SubCommand};
 
-#[macro_use] extern crate scan_fmt;
+#[macro_use]
+extern crate scan_fmt;
 
 type Arcs = Vec<Rc<Arc>>;
 type NodeId = u64;
 
-struct GraphOut { nodes: Vec<NodeId>, edges: Vec<(NodeId, NodeId)> }
+struct GraphOut {
+    nodes: Vec<NodeId>,
+    edges: Vec<(NodeId, NodeId)>,
+}
 
 #[derive(Copy, Clone)]
 struct Task {
@@ -28,23 +32,43 @@ struct Task {
     task_length: u64,
 
     is_valid: bool,
-
     /*
         A solution file only gives the three informations above
         So we need the original graph to evaluate the time_length of a task
     */
-
     // time_length = nb_of_people / evac_rate
     // time_length: u64
 }
 
+impl Task {
+    fn new(
+        node_id: u64,
+        total_people: u64,
+        evac_rate: u64,
+        start_offset: u64,
+        is_valid: bool,
+    ) -> Self {
+        // A task lasts for total_people/evac_rate + eventually another unit of time if total people is not a multiple of evac_rate
+        let task_length =
+            total_people / evac_rate + (if total_people % evac_rate > 0 { 1 } else { 0 });
+
+        Task {
+            node_id,
+            total_people,
+            evac_rate,
+            start_offset,
+            task_length,
+            is_valid,
+        }
+    }
+}
 
 /*
-    A resource is defined : 
+    A resource is defined :
     - its duration (time to travel through the resource)
     - a start offset
     - a capacity (that can't be exceeded at each t)
-    
+
     - a list of tasks involved
 
     This structure doesn't take into account the objective function (the supposed end of evacuation)
@@ -54,57 +78,41 @@ struct Resource {
     tasks: Vec<Task>,
     duration: u64,
     start_offset: u64,
-    capacity: u64,
-    arc: Rc<Arc>
+    arc: Rc<Arc>,
 }
 
 impl Resource {
-
     // Add a task to this resource >IF< it doesn't overload the resource
-    fn add_task(&mut self, task:Task) -> bool {
-
-        let task_length : u64;
-
-        // A task lasts for total_people/evac_rate + eventually another unit of time if total people is not a multiple of evac_rate
-        task_length = task.total_people / task.evac_rate + (if task.total_people % task.evac_rate > 0 {1} else {0});
+    fn add_task(&mut self, task: Task) -> bool {
+        let task_length = task.task_length;
 
         // Check for each unit of time if the capacity is not overloaded
-        for t in task.start_offset..(task.start_offset+task_length+1) {
-
-            // Capacity at t
-            let capacity_t: u64;
-
+        for t in task.start_offset..(task.start_offset + task_length + 1) {
             // Capacity needed by the added task
-            if t < task.start_offset + task_length {
-                capacity_t = task.total_people / task.evac_rate;
-            }
-            else {
-                capacity_t = task.total_people % task.evac_rate;
-            }
+            let mut capacity_t = if t < task.start_offset + task_length {
+                task.total_people / task.evac_rate
+            } else {
+                task.total_people % task.evac_rate
+            };
 
             // ... adding the capacity of all the other tasks running at the same t
-            for atask in self.tasks {
-
+            for atask in &self.tasks {
                 if t >= atask.start_offset && t < atask.start_offset + atask.task_length {
                     capacity_t += atask.evac_rate;
-                }
-                else if t == atask.start_offset + atask.task_length {
+                } else if t == atask.start_offset + atask.task_length {
                     if atask.total_people % atask.evac_rate > 0 {
                         capacity_t += atask.total_people % atask.evac_rate;
-                    }
-                    else {
+                    } else {
                         capacity_t += atask.evac_rate;
                     }
                 }
-
             }
 
             // Stops and return false if the capacity is overloaded
             // (the task won't be added to the resource)
-            if capacity_t > self.capacity {
+            if capacity_t > self.arc.as_ref().capacity {
                 return false;
             }
-
         }
 
         // Adds task to the resource (since it doesn't overload the resource)
@@ -113,15 +121,11 @@ impl Resource {
     }
 
     fn check_capacity() -> bool {
-
-
-
         return true;
-
     }
-
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
 struct Arc {
     start_id: NodeId,
     end_id: NodeId,
@@ -151,7 +155,7 @@ impl Graph {
         Graph {
             safe_id,
             nodes: BTreeMap::new(),
-            routes: Vec::new()
+            routes: Vec::new(),
         }
     }
 
@@ -171,10 +175,16 @@ impl Graph {
             let mut route = Vec::new();
             route.push((vals[0], vals[4]));
             for i in 4..4 + vals[4..].len() - 1 {
-                route.push((vals[i], vals[i+1]));
+                route.push((vals[i], vals[i + 1]));
             }
             routes.push(route);
-            graph.add_node(Node{id, population: Some(population), max_rate: Some(max_rate), incoming: Vec::new(), outgoing: None});
+            graph.add_node(Node {
+                id,
+                population: Some(population),
+                max_rate: Some(max_rate),
+                incoming: Vec::new(),
+                outgoing: None,
+            });
         }
 
         lines.next(); // remove second header
@@ -183,25 +193,52 @@ impl Graph {
         let (_, arcs_nb) = scan_fmt!(&line, "{} {}", u64, u64).unwrap();
         for _ in 0..arcs_nb {
             let line = lines.next().unwrap();
-            let (start_id, end_id, due_date, length, capacity) = scan_fmt!(&line, "{} {} {} {} {}", u64, u64, u64, u64, u64).unwrap();
+            let (start_id, end_id, due_date, length, capacity) =
+                scan_fmt!(&line, "{} {} {} {} {}", u64, u64, u64, u64, u64).unwrap();
             for route in &routes {
                 for (start_r, end_r) in route {
                     if start_id == *start_r && end_id == *end_r {
-                        graph.add_arc(Rc::new(Arc{start_id, end_id, length, capacity, due_date}));
+                        graph.add_arc(Rc::new(Arc {
+                            start_id,
+                            end_id,
+                            length,
+                            capacity,
+                            due_date,
+                        }));
                     } else if start_id == *end_r && end_id == *start_r {
-                        graph.add_arc(Rc::new(Arc{end_id, start_id, length, capacity, due_date}));
+                        graph.add_arc(Rc::new(Arc {
+                            end_id,
+                            start_id,
+                            length,
+                            capacity,
+                            due_date,
+                        }));
                     }
                 }
             }
         }
-        
-        graph.routes = routes.iter().map(|route| route.iter().map(|(start_id, _)| {
-            graph.nodes.get(start_id).expect("Missing node").outgoing.as_ref().expect(&format!("Missing outgoing for {}", start_id)).clone()
-        }).collect()).collect();
+
+        graph.routes = routes
+            .iter()
+            .map(|route| {
+                route
+                    .iter()
+                    .map(|(start_id, _)| {
+                        graph
+                            .nodes
+                            .get(start_id)
+                            .expect("Missing node")
+                            .outgoing
+                            .as_ref()
+                            .expect(&format!("Missing outgoing for {}", start_id))
+                            .clone()
+                    })
+                    .collect()
+            })
+            .collect();
 
         Ok(graph)
     }
-
 
     fn add_node(&mut self, node: Node) {
         self.nodes.insert(node.id, node);
@@ -209,18 +246,38 @@ impl Graph {
 
     fn add_arc(&mut self, arc: Rc<Arc>) {
         match self.nodes.get_mut(&arc.start_id) {
-            Some(ref mut node_start) if node_start.outgoing.is_none() => {node_start.outgoing = Some(arc.clone());},
-            None =>  {self.add_node(Node{id: arc.start_id, population: None, max_rate: None, incoming: Vec::new(), outgoing: Some(arc.clone())});}
+            Some(ref mut node_start) if node_start.outgoing.is_none() => {
+                node_start.outgoing = Some(arc.clone());
+            }
+            None => {
+                self.add_node(Node {
+                    id: arc.start_id,
+                    population: None,
+                    max_rate: None,
+                    incoming: Vec::new(),
+                    outgoing: Some(arc.clone()),
+                });
+            }
             _ => {}
         }
 
         match self.nodes.get_mut(&arc.end_id) {
-            Some(ref mut node_end) if !node_end.incoming.contains(&arc) => {node_end.incoming.push(arc)},
-            None => {self.add_node(Node{id: arc.end_id, population: None, max_rate: None, incoming: vec!(arc), outgoing: None});}
-            _ => ()
+            Some(ref mut node_end) if !node_end.incoming.contains(&arc) => {
+                node_end.incoming.push(arc)
+            }
+            None => {
+                self.add_node(Node {
+                    id: arc.end_id,
+                    population: None,
+                    max_rate: None,
+                    incoming: vec![arc],
+                    outgoing: None,
+                });
+            }
+            _ => (),
         }
     }
-    
+
     fn add_route(&mut self, route: Arcs) {
         self.routes.push(route);
     }
@@ -235,12 +292,10 @@ impl Graph {
             }
         }
 
-        let g = GraphOut{nodes, edges};
+        let g = GraphOut { nodes, edges };
         dot::render(&g, w);
     }
 }
-
-
 
 /*
 
@@ -250,8 +305,8 @@ impl Graph {
         1.a. L'ajouter aux ressources, dans l'ordre, pour tenir compte du décalage
             1.a.a. Pour chaque ressource, vérifier que la capacité n'est pas dépassé
 
-    Ca donnait en python : 
-    
+    Ca donnait en python :
+
     self.instance_name = instance_name
     self.evac_nb = evac_nb
     self.evac_nodes = evac_nodes
@@ -278,19 +333,18 @@ struct Solution {
 impl Solution {
     fn new() -> Self {
         Solution {
-            graph_name : String::new(),
-            nb_of_evac_nodes : 0,
-            tasks : Vec::new(),
-            is_valid : false,
-            obj_value : 0,
-            evaluation_time : 0,
-            method : String::new(),
-            comment : String::new(),
+            graph_name: String::new(),
+            nb_of_evac_nodes: 0,
+            tasks: Vec::new(),
+            is_valid: false,
+            obj_value: 0,
+            evaluation_time: 0,
+            method: String::new(),
+            comment: String::new(),
         }
     }
 
     fn parse(r: impl BufRead) -> Result<Solution, ()> {
-
         let mut sol = Solution::new();
 
         let mut lines = r.lines().map(|l| l.expect("Could not read line"));
@@ -302,21 +356,11 @@ impl Solution {
         sol.nb_of_evac_nodes = nb_of_evac_nodes;
 
         for _ in 0..nb_of_evac_nodes {
+            let (node_id_to_evac, evac_rate, start_offset) =
+                scan_fmt!(&lines.next().unwrap(), "{} {} {}", u64, u64, u64).unwrap();
 
-            let (node_id_to_evac, evac_rate, start_offset) = scan_fmt!(&lines.next().unwrap(), "{} {} {}", u64, u64, u64).unwrap();
-
-            let task = Task{
-                node_id: node_id_to_evac,
-
-                // It looks like "is_valid" in a task is useless
-                is_valid: false,
-
-                evac_rate: evac_rate,
-                start_offset: start_offset,
-            };
-
+            let task = Task::new(node_id_to_evac, 0, evac_rate, start_offset, false);
             sol.add_task(task);
-
         }
 
         sol.is_valid = lines.next().unwrap().trim() == "valid";
@@ -330,22 +374,19 @@ impl Solution {
         sol.comment = lines.next().unwrap();
 
         Ok(sol)
-
     }
-    
+
     fn add_task(&mut self, task: Task) {
         self.tasks.push(task);
     }
 
-
     fn check_with_graph(&mut self, graph: &Graph) -> bool {
-
         //for route in &graph.routes {
         //    for arc in &route {
-        //        let 
+        //        let
         //    }
         //}
-        
+
         // TODO
         /*
             + Generate an array of resources (one arc = one resource)
@@ -362,57 +403,50 @@ impl Solution {
                     + Else
                         sol.is_valid = false;
                         return is_valid;
-            
+
             sol.is_valid = true;
             return is_valid;
 
         */
 
         // Initialisation des ressources
-        let resources : Vec<Resource> = Vec::new();
+        let mut resources: Vec<Resource> = Vec::new();
+        let mut arc_set = HashSet::new();
 
         // We can iterate directly on each route
         // The only important data in the solution is the start_offset at the beginning of the task
 
-        for route in graph.routes {
-
+        for route in &graph.routes {
             // the task corresponding to the route we are studying
             // //!!!\\ SO WE HAVE TO ACTUALLY FIND THE TASK, CORRESPONDING TO THE ROUTE, IN THE SOLUTION
             // For example we could check from which node the route begins
-            let task : Task;
-
-            let start_offset = task.start_offset;
-
+            let id = route[0].as_ref().start_id;
+            let task = self.tasks.iter().find(|task| task.node_id == id).unwrap();
+            let mut start_offset = task.start_offset;
             // Going through the route // WILL IT ITERATE OVER IT IN THE GOOD ORDER?
             for arc in route {
-
-                let the_res : Resource;
-
-                if () // resource corresponding to this arc doesn't already exist
-                {
+                // resource corresponding to this arc doesn't already exist
+                let the_res = if !arc_set.contains(arc.as_ref()) {
+                    arc_set.insert(arc.as_ref());
 
                     let new_res = Resource {
-
-                        tasks : Vec::new(),
+                        tasks: Vec::new(),
                         duration: arc.length,
                         start_offset: start_offset,
-                        arc: arc
-                        
+                        arc: arc.clone(),
                     };
 
                     // Add the resource
                     resources.push(new_res);
+                    resources.last_mut().unwrap()
+                } else {
+                    resources
+                        .iter_mut()
+                        .find(|res| res.arc.as_ref() == arc.as_ref())
+                        .unwrap()
+                };
 
-                    the_res = new_res;
-
-                }
-
-                else 
-                {
-                    // the_res = resources.find(Corresponding Resource according to the arc)
-                }
-
-                let is_task_valid : bool = the_res.add_task(task);
+                let is_task_valid = the_res.add_task(*task);
 
                 // If capacity is not sufficent, we stop checking the solution
                 // and we return that it is invalid
@@ -420,30 +454,15 @@ impl Solution {
                     self.is_valid = false;
                     return false; // Or a constant like SOLUTION_INVALID
                 }
-
                 // Else we continue
-
                 start_offset = the_res.start_offset + the_res.duration;
-
             }
-
-            
-            
-
-
-            resources.push(the_res);
-
         }
-
 
         // If we reach this line, the solution is_valid
         self.is_valid = true;
         return true;
-
-
-        
     }
-
 }
 
 /* Creating a solution :
@@ -453,12 +472,10 @@ impl Solution {
 
 
 */
-
-
-
-
 impl<'a> dot::Labeller<'a, NodeId, (NodeId, NodeId)> for GraphOut {
-    fn graph_id(&'a self) -> dot::Id<'a> { dot::Id::new("Graph").unwrap() }
+    fn graph_id(&'a self) -> dot::Id<'a> {
+        dot::Id::new("Graph").unwrap()
+    }
     fn node_id(&'a self, n: &NodeId) -> dot::Id<'a> {
         dot::Id::new(format!("N{}", n)).unwrap()
     }
@@ -471,10 +488,18 @@ impl<'a> dot::Labeller<'a, NodeId, (NodeId, NodeId)> for GraphOut {
 }
 
 impl<'a> dot::GraphWalk<'a, NodeId, (NodeId, NodeId)> for GraphOut {
-    fn nodes(&'a self) -> dot::Nodes<'a,NodeId> {Cow::Borrowed(&self.nodes)}
-    fn edges(&'a self) ->  dot::Edges<'a, (NodeId, NodeId)> { Cow::Borrowed(&self.edges) }
-    fn source(&self, e: &(NodeId, NodeId)) -> NodeId { e.0 }
-    fn target(&self, e: &(NodeId, NodeId)) -> NodeId { e.1 }
+    fn nodes(&'a self) -> dot::Nodes<'a, NodeId> {
+        Cow::Borrowed(&self.nodes)
+    }
+    fn edges(&'a self) -> dot::Edges<'a, (NodeId, NodeId)> {
+        Cow::Borrowed(&self.edges)
+    }
+    fn source(&self, e: &(NodeId, NodeId)) -> NodeId {
+        e.0
+    }
+    fn target(&self, e: &(NodeId, NodeId)) -> NodeId {
+        e.1
+    }
 }
 
 fn main() {
@@ -482,12 +507,16 @@ fn main() {
         .version("1.0")
         .author("Lucien Menassol <lucien.menassol@gmail.com> Julien Bonnasserre")
         .about("Projet metaheuristique")
-        .subcommand(SubCommand::with_name("solution")
-                                      .about("Check the validity of a solution")
-                                      .arg_from_usage("<file> 'Solution file'"))
-        .subcommand(SubCommand::with_name("graph")
-                                      .about("Render a graph to a dot file")
-                                      .arg_from_usage("<in_file> 'In file'"))
+        .subcommand(
+            SubCommand::with_name("solution")
+                .about("Check the validity of a solution")
+                .arg_from_usage("<file> 'Solution file'"),
+        )
+        .subcommand(
+            SubCommand::with_name("graph")
+                .about("Render a graph to a dot file")
+                .arg_from_usage("<in_file> 'In file'"),
+        )
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("solution") {
@@ -498,7 +527,7 @@ fn main() {
     }
     if let Some(matches) = matches.subcommand_matches("graph") {
         let filename = matches.value_of("in_file").unwrap();
-        
+
         let file = File::open(filename).expect(&format!("Could not open {}", filename));
         let file = BufReader::new(file);
         let out_file = File::create("out.dot").expect(&format!("Could not create {}", "out.dot"));
