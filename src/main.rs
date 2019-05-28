@@ -19,20 +19,14 @@ struct GraphOut { nodes: Vec<NodeId>, edges: Vec<(NodeId, NodeId)> }
 #[derive(Copy, Clone)]
 struct Task {
     node_id: u64,
-<<<<<<< HEAD
 
     total_people: u64,
 
-=======
->>>>>>> e8bf71a40826e8521e76a898b8ff9f2047b10a58
     evac_rate: u64,
     start_offset: u64,
-<<<<<<< HEAD
 
     task_length: u64,
 
-=======
->>>>>>> e8bf71a40826e8521e76a898b8ff9f2047b10a58
     is_valid: bool,
 
     /*
@@ -44,6 +38,18 @@ struct Task {
     // time_length: u64
 }
 
+
+/*
+    A resource is defined : 
+    - its duration (time to travel through the resource)
+    - a start offset
+    - a capacity (that can't be exceeded at each t)
+    
+    - a list of tasks involved
+
+    This structure doesn't take into account the objective function (the supposed end of evacuation)
+
+*/
 struct Resource {
     tasks: Vec<Task>,
     duration: u64,
@@ -52,9 +58,9 @@ struct Resource {
     arc: Rc<Arc>
 }
 
-<<<<<<< HEAD
 impl Resource {
 
+    // Add a task to this resource >IF< it doesn't overload the resource
     fn add_task(&mut self, task:Task) -> bool {
 
         let task_length : u64;
@@ -65,8 +71,10 @@ impl Resource {
         // Check for each unit of time if the capacity is not overloaded
         for t in task.start_offset..(task.start_offset+task_length+1) {
 
+            // Capacity at t
             let capacity_t: u64;
 
+            // Capacity needed by the added task
             if t < task.start_offset + task_length {
                 capacity_t = task.total_people / task.evac_rate;
             }
@@ -74,6 +82,7 @@ impl Resource {
                 capacity_t = task.total_people % task.evac_rate;
             }
 
+            // ... adding the capacity of all the other tasks running at the same t
             for atask in self.tasks {
 
                 if t >= atask.start_offset && t < atask.start_offset + atask.task_length {
@@ -90,15 +99,16 @@ impl Resource {
 
             }
 
-
+            // Stops and return false if the capacity is overloaded
+            // (the task won't be added to the resource)
             if capacity_t > self.capacity {
-                return false
+                return false;
             }
 
         }
 
-        
-        self.tasks.append(task);
+        // Adds task to the resource (since it doesn't overload the resource)
+        self.tasks.push(task);
         return true;
     }
 
@@ -112,9 +122,6 @@ impl Resource {
 
 }
 
-=======
-#[derive(Debug, PartialEq)]
->>>>>>> e8bf71a40826e8521e76a898b8ff9f2047b10a58
 struct Arc {
     start_id: NodeId,
     end_id: NodeId,
@@ -331,19 +338,13 @@ impl Solution {
     }
 
 
-<<<<<<< HEAD
-    fn check_with_graph(&mut self, graph: Graph) -> bool {
-=======
-    fn check_with_graph(&mut self, graph: &Graph) {
-        
+    fn check_with_graph(&mut self, graph: &Graph) -> bool {
 
-        let ressources: Vec<Ressource> = Vec::new();
         //for route in &graph.routes {
         //    for arc in &route {
         //        let 
         //    }
         //}
->>>>>>> e8bf71a40826e8521e76a898b8ff9f2047b10a58
         
         // TODO
         /*
@@ -368,7 +369,7 @@ impl Solution {
         */
 
         // Initialisation des ressources
-        let resources : Vec<Resource>;
+        let resources : Vec<Resource> = Vec::new();
 
         // We can iterate directly on each route
         // The only important data in the solution is the start_offset at the beginning of the task
@@ -376,17 +377,18 @@ impl Solution {
         for route in graph.routes {
 
             // the task corresponding to the route we are studying
+            // //!!!\\ SO WE HAVE TO ACTUALLY FIND THE TASK, CORRESPONDING TO THE ROUTE, IN THE SOLUTION
             // For example we could check from which node the route begins
             let task : Task;
 
             let start_offset = task.start_offset;
 
-            // Going through the route
+            // Going through the route // WILL IT ITERATE OVER IT IN THE GOOD ORDER?
             for arc in route {
 
                 let the_res : Resource;
 
-                if ()// resource corresponding to this arc doesn't already exist
+                if () // resource corresponding to this arc doesn't already exist
                 {
 
                     let new_res = Resource {
@@ -399,7 +401,7 @@ impl Solution {
                     };
 
                     // Add the resource
-                    resources.append(new_res);
+                    resources.push(new_res);
 
                     the_res = new_res;
 
@@ -410,11 +412,11 @@ impl Solution {
                     // the_res = resources.find(Corresponding Resource according to the arc)
                 }
 
-                the_res.add_task(task);
+                let is_task_valid : bool = the_res.add_task(task);
 
                 // If capacity is not sufficent, we stop checking the solution
                 // and we return that it is invalid
-                if (the_res.check_capacity() == FAIL){
+                if !is_task_valid {
                     self.is_valid = false;
                     return false; // Or a constant like SOLUTION_INVALID
                 }
@@ -429,7 +431,7 @@ impl Solution {
             
 
 
-            resources.append(the_res)
+            resources.push(the_res);
 
         }
 
@@ -444,7 +446,13 @@ impl Solution {
 
 }
 
+/* Creating a solution :
+    The teacher advised us to use a greedy algorithm :
+    -> Just start from any node (alphetical order? numerical?)
+    -> Add task as it is if possible, or put an offset if not
 
+
+*/
 
 
 
