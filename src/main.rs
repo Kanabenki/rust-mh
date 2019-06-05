@@ -174,7 +174,7 @@ impl Graph {
             let max_rate = vals[2];
             let mut route = Vec::new();
             route.push((vals[0], vals[4]));
-            for i in 4..4 + vals[4..].len() - 1 {
+            for i in 4..(4 + vals[4..].len() - 1) {
                 route.push((vals[i], vals[i + 1]));
             }
             routes.push(route);
@@ -193,22 +193,22 @@ impl Graph {
         let (_, arcs_nb) = scan_fmt!(&line, "{} {}", u64, u64).unwrap();
         for _ in 0..arcs_nb {
             let line = lines.next().unwrap();
-            let (start_id, end_id, due_date, length, capacity) =
+            let (s_id, e_id, due_date, length, capacity) =
                 scan_fmt!(&line, "{} {} {} {} {}", u64, u64, u64, u64, u64).unwrap();
             for route in &routes {
                 for (start_r, end_r) in route {
-                    if start_id == *start_r && end_id == *end_r {
+                    if s_id == *start_r && e_id == *end_r {
                         graph.add_arc(Rc::new(Arc {
-                            start_id,
-                            end_id,
+                            start_id: s_id,
+                            end_id: e_id,
                             length,
                             capacity,
                             due_date,
                         }));
-                    } else if start_id == *end_r && end_id == *start_r {
+                    } else if s_id == *end_r && e_id == *start_r {
                         graph.add_arc(Rc::new(Arc {
-                            end_id,
-                            start_id,
+                            start_id: e_id,
+                            end_id: s_id,
                             length,
                             capacity,
                             due_date,
@@ -364,13 +364,9 @@ impl Solution {
         }
 
         sol.is_valid = lines.next().unwrap().trim() == "valid";
-
         sol.obj_value = scan_fmt!(&lines.next().unwrap(), "{}", u64).unwrap();
-
         sol.evaluation_time = scan_fmt!(&lines.next().unwrap(), "{}", u64).unwrap();
-
         sol.method = lines.next().unwrap();
-
         sol.comment = lines.next().unwrap();
 
         Ok(sol)
@@ -507,38 +503,40 @@ fn main() {
         .version("1.0")
         .author("Lucien Menassol <lucien.menassol@gmail.com> Julien Bonnasserre")
         .about("Projet metaheuristique")
-        .subcommand(
-            SubCommand::with_name("solution")
-                .about("Check the validity of a solution")
-                .arg_from_usage("<file> 'Solution file'"),
-        )
-        .subcommand(
-            SubCommand::with_name("graph")
-                .about("Render a graph to a dot file")
-                .arg_from_usage("<in_file> 'In file'"),
+        .args_from_usage(
+            "-p --print-graph          'Prints the parsed graph'
+             -s, --solution=[solution] 'Validate a solution file'
+             <graph>                   'Input graph file'",
         )
         .get_matches();
 
-    if let Some(matches) = matches.subcommand_matches("solution") {
-        let filename = matches.value_of("file").unwrap();
-        let file = File::open(filename).unwrap();
-        let file = BufReader::new(file);
-        let sol = Solution::parse(file).expect("Invalid solution");
-    }
-    if let Some(matches) = matches.subcommand_matches("graph") {
-        let filename = matches.value_of("in_file").unwrap();
+    let filename = matches.value_of("graph").unwrap();
+    let file = File::open(filename).expect(&format!("Could not open {}", filename));
+    let file = BufReader::new(file);
 
-        let file = File::open(filename).expect(&format!("Could not open {}", filename));
-        let file = BufReader::new(file);
+    println!("Checking graph");
+    if let Ok(graph) = Graph::parse(file) {
+        println!("Graph is valid");
+        if matches.is_present("print-graph") {
+            println!("{:#?}", graph);
+        }
         let out_file = File::create("out.dot").expect(&format!("Could not create {}", "out.dot"));
         let mut out_file = BufWriter::new(out_file);
+        graph.render_to(&mut out_file);
+        println!("Graph rendered to out.dot");
 
-        if let Ok(graph) = Graph::parse(file) {
-            println!("{:#?}", graph);
-            graph.render_to(&mut out_file);
-        } else {
-            eprintln!("Could not parse graph");
-            exit(1);
+        if let Some(filename) = matches.value_of("solution") {
+            println!("Checking solution");
+            let sol_file = File::open(filename).expect(&format!("Could not open {}", filename));
+            let sol_file = BufReader::new(sol_file);
+            let mut sol = Solution::parse(sol_file).expect("Could not parse solution");
+            match sol.check_with_graph(&graph) {
+                false => println!("Invalid solution"),
+                true => println!("Valid solution"),
+            }
         }
+    } else {
+        eprintln!("Could not parse graph");
+        exit(1);
     }
 }
