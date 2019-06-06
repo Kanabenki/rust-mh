@@ -431,7 +431,7 @@ impl Solution {
     }
 
     pub fn check_with_graph(&mut self, graph: &Graph) -> bool {
-        use AddTaskResult::Ok;
+        use AddTaskResult::Failed;
         //for route in &graph.routes {
         //    for arc in &route {
         //        let
@@ -499,7 +499,7 @@ impl Solution {
 
                 // If capacity is not sufficent, we stop checking the solution
                 // and we return that it is invalid
-                if let Ok = is_task_valid {
+                if let Failed(_) = is_task_valid {
                     println!("Validation failed on arc {:?} with task {:?}", arc, task);
                     self.is_valid = false;
                     return false; // Or a constant like SOLUTION_INVALID
