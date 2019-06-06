@@ -18,6 +18,7 @@ fn main() {
         .args_from_usage(
             "-p --print-graph          'Prints the parsed graph'
              -s, --solution=[solution] 'Validate a solution file'
+             -b, --bounds              'Calculate lower and upper bounds'
              <graph>                   'Input graph file'",
         )
         .get_matches();
@@ -37,6 +38,11 @@ fn main() {
         graph.render_to(&mut out_file);
         println!("Graph rendered to out.dot");
 
+        if matches.is_present("bounds") {
+            let (low, up) = graph.get_bounds();
+            println!("Lower bound: {}\nUpper bound: {}", low, up);
+        }
+    
         if let Some(filename) = matches.value_of("solution") {
             println!("Checking solution");
             let sol_file = File::open(filename).expect(&format!("Could not open {}", filename));
@@ -47,6 +53,7 @@ fn main() {
                 true => println!("Valid solution"),
             }
         }
+
     } else {
         eprintln!("Could not parse graph");
         exit(1);

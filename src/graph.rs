@@ -15,7 +15,7 @@ struct GraphOut {
 
 #[derive(Clone, Debug)]
 struct Task {
-    node_id: u64,
+    node_id_to_evac: u64,
 
     total_people: u64,
 
@@ -35,7 +35,7 @@ struct Task {
 
 impl Task {
     fn new(
-        node_id: u64,
+        node_id_to_evac: u64,
         total_people: u64,
         evac_rate: u64,
         start_offset: u64,
@@ -46,7 +46,7 @@ impl Task {
             total_people / evac_rate + (if (total_people % evac_rate) > 0 { 1 } else { 0 });
 
         Task {
-            node_id,
+            node_id_to_evac,
             total_people,
             evac_rate,
             start_offset,
@@ -54,6 +54,11 @@ impl Task {
             is_valid,
         }
     }
+}
+
+enum AddTaskResult {
+    Ok,
+    Failed(u64)
 }
 
 /*
@@ -70,33 +75,30 @@ impl Task {
 struct Resource {
     tasks: Vec<Task>,
     duration: u64,
-    start_offset: u64,
     arc: Rc<Arc>,
 }
 
 impl Resource {
     // Add a task to this resource >IF< it doesn't overload the resource
-    fn add_task(&mut self, task: Task) -> bool {
-        println!("ADD TASK {:?}", task);
+    fn add_task(&mut self, task: Task) -> AddTaskResult {
+        use AddTaskResult::{Failed, Ok};
         let task_length = task.task_length;
 
         // Check for each unit of time if the capacity is not overloaded
-        for t in task.start_offset..(task.start_offset + task_length + 1) {
+        for t in task.start_offset..(task.start_offset + task_length) {
             // Capacity needed by the added task
-            let mut capacity_t = if t < task.start_offset + task_length {
+            let mut capacity_t = if t < task.start_offset + task_length - 1 {
                 task.evac_rate
             } else {
                 task.total_people % task.evac_rate
             };
 
-            println!("FIRST CAP {}", capacity_t);
-
             // ... adding the capacity of all the other tasks running at the same t
             for atask in &self.tasks {
-                if t >= atask.start_offset && t < atask.start_offset + atask.task_length {
+                if t >= atask.start_offset && t < (atask.start_offset + atask.task_length - 1) {
                     capacity_t += atask.evac_rate;
-                } else if t == atask.start_offset + atask.task_length {
-                    if atask.total_people % atask.evac_rate > 0 {
+                } else if t == atask.start_offset + atask.task_length - 1 {
+                    if (atask.total_people % atask.evac_rate) > 0 {
                         capacity_t += atask.total_people % atask.evac_rate;
                     } else {
                         capacity_t += atask.evac_rate;
@@ -106,15 +108,15 @@ impl Resource {
 
             // Stops and return false if the capacity is overloaded
             // (the task won't be added to the resource)
-            println!("CAPA {} FOR ARC {:?}", capacity_t, self.arc.as_ref());
             if capacity_t > self.arc.as_ref().capacity {
-                return false;
+                let max = self.tasks.iter().fold(0, |max, task| std::cmp::max(max, task.start_offset + task.task_length));
+                return Failed(max);
             }
         }
 
         // Adds task to the resource (since it doesn't overload the resource)
         self.tasks.push(task);
-        return true;
+        return Ok;
     }
 
     fn check_capacity() -> bool {
@@ -292,6 +294,61 @@ impl Graph {
         let g = GraphOut { nodes, edges };
         dot::render(&g, w);
     }
+
+    pub fn get_bounds(&self) -> (u64, u64) {
+        let times: Vec<_> = self.routes.iter().map(|route| {
+            let pop = self.nodes.get(&route[0].start_id).expect("Missing node").population.expect("No population");
+            let length = route.iter().fold(0, |tot, arc|  tot + arc.length);
+            let min_cap = route.iter().fold(std::u64::MAX, |min, arc| std::cmp::min(min, arc.capacity));
+            pop / min_cap + (if pop % min_cap == 0 {0} else {1}) + length - 1
+        }).collect();
+
+        (*times.iter().max().unwrap(), times.iter().sum())
+    }
+
+    pub fn generate_solution(&self) -> Solution {
+        use AddTaskResult::*;
+
+        let mut resources: Vec<Resource> = Vec::new();
+        let mut arc_set = HashSet::new();
+
+
+        for route in &self.routes {
+            let id = route[0].as_ref().start_id;
+            let mut task = Task::new(id, self.nodes.get(&id).expect("Missing node").population.expect("No pop"), 0, 0, true);
+            for arc in route {
+
+                let the_res = if !arc_set.contains(arc.as_ref()) {
+                    arc_set.insert(arc.as_ref());
+
+                    let new_res = Resource {
+                        tasks: Vec::new(),
+                        duration: arc.length,
+                        arc: arc.clone(),
+                    };
+
+                    resources.push(new_res);
+                    resources.last_mut().unwrap()
+                } else {
+                    resources
+                        .iter_mut()
+                        .find(|res| res.arc.as_ref() == arc.as_ref())
+                        .unwrap()
+                };
+
+                match the_res.add_task(task.clone()) {
+                    Ok => {},
+                    Failed(max) => {
+                        
+                    },
+                }
+
+                task.start_offset += the_res.duration;
+            }
+        }
+
+        unimplemented!();
+    }
 }
 
 /*
@@ -374,6 +431,7 @@ impl Solution {
     }
 
     pub fn check_with_graph(&mut self, graph: &Graph) -> bool {
+        use AddTaskResult::Ok;
         //for route in &graph.routes {
         //    for arc in &route {
         //        let
@@ -413,7 +471,7 @@ impl Solution {
             // //!!!\\ SO WE HAVE TO ACTUALLY FIND THE TASK, CORRESPONDING TO THE ROUTE, IN THE SOLUTION
             // For example we could check from which node the route begins
             let id = route[0].as_ref().start_id;
-            let mut task = self.tasks.iter().find(|task| task.node_id == id).unwrap().clone();
+            let mut task = self.tasks.iter().find(|task| task.node_id_to_evac == id).unwrap().clone();
             // Going through the route // WILL IT ITERATE OVER IT IN THE GOOD ORDER?
             for arc in route {
 
@@ -424,7 +482,6 @@ impl Solution {
                     let new_res = Resource {
                         tasks: Vec::new(),
                         duration: arc.length,
-                        start_offset: task.start_offset,
                         arc: arc.clone(),
                     };
 
@@ -442,12 +499,11 @@ impl Solution {
 
                 // If capacity is not sufficent, we stop checking the solution
                 // and we return that it is invalid
-                if !is_task_valid {
+                if let Ok = is_task_valid {
                     println!("Validation failed on arc {:?} with task {:?}", arc, task);
                     self.is_valid = false;
                     return false; // Or a constant like SOLUTION_INVALID
                 }
-                //println!("", )
                 // Else we continue
                 task.start_offset += the_res.duration;
             }
